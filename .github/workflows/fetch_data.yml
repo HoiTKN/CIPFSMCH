@@ -1,36 +1,26 @@
-name: Fetch Google Sheet Data Daily
+name: Fetch Google Sheet Data
 
 on:
-  # Lịch chạy tự động hằng ngày lúc 00:00 UTC
-  schedule:
-    - cron: '0 0 * * *'
-  # Cho phép chạy thủ công (nếu bạn muốn test)
-  workflow_dispatch:
+  workflow_dispatch: # Cho phép chạy thủ công
 
 jobs:
   fetch-data:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout code với persist-credentials bật để giữ thông tin xác thực
       - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          persist-credentials: true
 
-      # 2. Thiết lập môi trường Python
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
-      # 3. Cài đặt các thư viện cần thiết
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install gspread google-auth google-auth-oauthlib google-auth-httplib2 pandas
 
-      # 4. Chạy script fetch_sheet_data.py
       - name: Run script
         env:
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
@@ -40,13 +30,10 @@ jobs:
         run: |
           python fetch_sheet_data.py
 
-      # 5. Commit file data.csv (nếu có thay đổi) sử dụng PAT để push
       - name: Commit updated data
-        env:
-          PAT: ${{ secrets.PAT }}
         run: |
           git config --global user.email "hoitkn@msc.masangroup.com"
           git config --global user.name "GitHub Actions"
           git add data.csv
           git commit -m "Update data.csv from Google Sheet" || echo "No changes to commit"
-          git push https://x-access-token:${PAT}@github.com/${{ github.repository }} HEAD:${{ github.ref }}
+          git push
