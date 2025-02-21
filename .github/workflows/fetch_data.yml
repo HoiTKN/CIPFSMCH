@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout code với persist-credentials bật để giữ GITHUB_TOKEN
+      # 1. Checkout code với persist-credentials bật để giữ thông tin xác thực
       - name: Checkout code
         uses: actions/checkout@v3
         with:
@@ -40,13 +40,13 @@ jobs:
         run: |
           python fetch_sheet_data.py
 
-      # 5. Commit file data.csv (nếu có thay đổi)
+      # 5. Commit file data.csv (nếu có thay đổi) sử dụng PAT để push
       - name: Commit updated data
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PAT: ${{ secrets.PAT }}
         run: |
           git config --global user.email "hoitkn@msc.masangroup.com"
           git config --global user.name "GitHub Actions"
           git add data.csv
           git commit -m "Update data.csv from Google Sheet" || echo "No changes to commit"
-          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }} HEAD:${{ github.ref }}
+          git push https://x-access-token:${PAT}@github.com/${{ github.repository }} HEAD:${{ github.ref }}
