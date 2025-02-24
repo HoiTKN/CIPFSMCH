@@ -7,9 +7,6 @@ def load_data():
     # Đọc dữ liệu từ file CSV
     df = pd.read_csv("data.csv")
     
-    # Hiển thị các cột ban đầu (để kiểm tra)
-    st.write("Các cột ban đầu:", df.columns)
-    
     # Đổi tên cột cho phù hợp với quá trình phân tích
     df.rename(columns={
         "Line": "line",
@@ -45,8 +42,6 @@ def main():
     
     # Load và hiển thị dữ liệu
     df = load_data()
-    st.write("Dữ liệu sau khi xử lý:")
-    st.write(df.head())
     
     # Lọc dữ liệu theo line (hiện tại chỉ có MMB, nhưng mở rộng khi có thêm line)
     lines = df['line'].unique()
