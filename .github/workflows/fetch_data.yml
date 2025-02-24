@@ -1,6 +1,8 @@
 name: Fetch Google Sheet Data
 
 on:
+  schedule:
+    - cron: '0 23 */2 * *'  # 23:00 UTC = 6:00 sáng giờ Việt Nam (UTC+7)
   workflow_dispatch: # Cho phép chạy thủ công
 
 jobs:
