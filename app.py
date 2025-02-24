@@ -4,101 +4,159 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 def load_data():
-    # Đọc dữ liệu từ file CSV
+    """Đọc dữ liệu gốc từ file CSV mà không đổi tên cột."""
     df = pd.read_csv("data.csv")
-    
-    # Đổi tên cột cho phù hợp với quá trình phân tích
-    df.rename(columns={
-        "Line": "line",
-        "Thời gian Bắt đầu CIP": "date",
-        "Tổng thời gian bước Xút": "time_alkali",
-        "Độ dẫn điện Xút Bắt đầu": "cond_alkali",
-        "Nhiệt độ Xút Bắt đầu": "temp_alkali",
-        "Tổng thời gian bước nước nóng": "time_hotwater",
-        "Nhiệt độ Nước nóng Bắt đầu": "temp_hotwater"
-    }, inplace=True)
-    
-    # Chuyển đổi cột 'date' sang dạng datetime với định dạng dd/mm/yy HH:MM
-    df['date'] = pd.to_datetime(df['date'], format="%d/%m/%y %H:%M")
-    
-    # Hàm chuyển đổi thời gian dạng "HH:MM" thành số phút (float)
-    def convert_time_to_minutes(time_str):
-        try:
-            td = pd.to_timedelta(time_str)
-            return td.total_seconds() / 60
-        except Exception as e:
-            return None
-    
-    # Chuyển đổi các cột thời gian sang số phút
-    df['time_alkali'] = df['time_alkali'].apply(convert_time_to_minutes)
-    df['time_hotwater'] = df['time_hotwater'].apply(convert_time_to_minutes)
-    
-    # Sắp xếp dữ liệu theo cột 'date'
-    df = df.sort_values(by="date")
     return df
+
+def clean_data(df):
+    """
+    1) Tách các dòng outlier (có 0 ở Lưu lượng hồi, Tổng thời gian bước Xút, Tổng thời gian bước nước nóng).
+    2) Chuyển cột thời gian bắt đầu/ kết thúc CIP sang datetime.
+    3) Chuyển các cột thời gian Xút / Nước nóng sang phút (tạo thêm cột (phút)).
+    4) Tính khoảng cách giữa 2 lần CIP liên tiếp (time_gap_days).
+    """
+    # 1) Tách outlier
+    outlier_condition = (
+        (df['Lưu lượng hồi (l/h)'] == 0) |
+        (df['Tổng thời gian bước Xút'] == 0) |
+        (df['Tổng thời gian bước nước nóng'] == 0)
+    )
+    df_outliers = df[outlier_condition].copy()
+    df_clean = df[~outlier_condition].copy()
+    
+    # 2) Chuyển "Thời gian Bắt đầu CIP" / "Thời gian Kết thúc CIP" sang datetime
+    df_clean['Thời gian Bắt đầu CIP'] = pd.to_datetime(
+        df_clean['Thời gian Bắt đầu CIP'],
+        format="%d/%m/%y %H:%M",
+        errors='coerce'
+    )
+    df_clean['Thời gian Kết thúc CIP'] = pd.to_datetime(
+        df_clean['Thời gian Kết thúc CIP'],
+        format="%d/%m/%y %H:%M",
+        errors='coerce'
+    )
+    
+    # 3) Chuyển "Tổng thời gian bước Xút" & "Tổng thời gian bước nước nóng" sang số phút
+    def convert_to_minutes(t_str):
+        try:
+            td = pd.to_timedelta(t_str)  # "0:31" -> 31 phút
+            return td.total_seconds() / 60
+        except:
+            return None
+
+    df_clean['Tổng thời gian bước Xút (phút)'] = df_clean['Tổng thời gian bước Xút'].apply(convert_to_minutes)
+    df_clean['Tổng thời gian bước nước nóng (phút)'] = df_clean['Tổng thời gian bước nước nóng'].apply(convert_to_minutes)
+    
+    # Sắp xếp dữ liệu theo (Line, Circuit, Thời gian Bắt đầu CIP)
+    df_clean.sort_values(by=['Line', 'Circuit', 'Thời gian Bắt đầu CIP'], inplace=True)
+    
+    # 4) Tính khoảng cách giữa 2 lần CIP liên tiếp
+    df_clean['next_start'] = df_clean.groupby(['Line', 'Circuit'])['Thời gian Bắt đầu CIP'].shift(-1)
+    df_clean['time_gap_days'] = (
+        (df_clean['next_start'] - df_clean['Thời gian Kết thúc CIP'])
+        .dt.total_seconds() / 86400
+    )
+    
+    return df_clean, df_outliers
 
 def main():
     st.title("CIP Data Dashboard")
     
-    # Load và hiển thị dữ liệu
-    df = load_data()
+    # 1) Đọc dữ liệu gốc và làm sạch
+    df_raw = load_data()
+    df_clean, df_outliers = clean_data(df_raw)
     
-    # Lọc dữ liệu theo line (hiện tại chỉ có MMB, nhưng mở rộng khi có thêm line)
-    lines = df['line'].unique()
-    selected_line = st.selectbox("Chọn line", lines)
-    df_line = df[df['line'] == selected_line]
+    # Thông tin cơ bản về quá trình làm sạch
+    st.subheader("1) Thống kê dữ liệu (sau khi làm sạch)")
+    st.write(f"- Số dòng dữ liệu gốc: **{df_raw.shape[0]}**")
+    st.write(f"- Số dòng bị loại bỏ (outliers): **{df_outliers.shape[0]}**")
+    st.write(f"- Số dòng còn lại sau khi làm sạch: **{df_clean.shape[0]}**")
     
-    st.subheader(f"1) Thống kê mô tả - Line: {selected_line}")
-    st.write(df_line.describe())
+    # Nếu không còn dữ liệu nào sau khi làm sạch thì dừng
+    if df_clean.empty:
+        st.warning("Dữ liệu sau khi làm sạch không còn dòng nào để phân tích.")
+        return
     
-    # Vẽ các biểu đồ trực quan
-    plot_time_series(df_line)
-    plot_bar_compliance(df_line)
-    plot_boxplot(df_line)
-    plot_correlation(df_line)
-
-def plot_time_series(df_line):
-    st.subheader("2) Biểu đồ xu hướng (Time-series)")
-    # Vẽ biểu đồ xu hướng cho thời gian tuần hoàn xút (time_alkali)
-    fig, ax = plt.subplots()
-    ax.plot(df_line['date'], df_line['time_alkali'], marker='o', label='Time Alkali (min)')
-    # Vẽ đường ngưỡng chuẩn: >=30 phút
-    ax.axhline(30, color='red', linestyle='--', label='Chuẩn >= 30 phút')
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Thời gian (phút)")
-    ax.set_title("Thời gian tuần hoàn xút theo thời gian")
-    ax.legend()
-    st.pyplot(fig)
-
-def plot_bar_compliance(df_line):
-    st.subheader("3) Tần suất vi phạm / % tuân thủ")
-    # Xác định việc tuân thủ đối với thời gian xút: True nếu >=30 phút, False nếu không
-    df_line['compliance_alkali'] = df_line['time_alkali'] >= 30
-    compliance_count = df_line['compliance_alkali'].value_counts()
+    # 2) Lựa chọn line, circuit
+    lines = df_clean['Line'].unique()
+    selected_line = st.selectbox("Chọn Line", lines)
+    df_line = df_clean[df_clean['Line'] == selected_line]
     
-    fig, ax = plt.subplots()
-    compliance_count.plot(kind='bar', ax=ax)
-    ax.set_title("Tuân thủ thời gian xút (True = Đạt, False = Không đạt)")
-    st.pyplot(fig)
-
-def plot_boxplot(df_line):
-    st.subheader("4) Boxplot phân bố giá trị")
-    # Chọn các cột số để vẽ boxplot
-    columns_to_plot = ['time_alkali', 'temp_alkali', 'cond_alkali', 'time_hotwater', 'temp_hotwater']
-    fig, ax = plt.subplots(figsize=(10, 6))
-    sns.boxplot(data=df_line[columns_to_plot], ax=ax)
-    ax.set_title("Boxplot của các chỉ số CIP")
-    st.pyplot(fig)
-
-def plot_correlation(df_line):
-    st.subheader("5) Ma trận tương quan (Correlation Heatmap)")
-    # Chọn các cột số để tính ma trận tương quan
-    numeric_cols = ['time_alkali', 'temp_alkali', 'cond_alkali', 'time_hotwater', 'temp_hotwater']
-    corr = df_line[numeric_cols].corr()
-    fig, ax = plt.subplots()
-    sns.heatmap(corr, annot=True, cmap="YlGnBu", ax=ax)
-    ax.set_title("Ma trận tương quan")
-    st.pyplot(fig)
+    circuits = df_line['Circuit'].unique()
+    selected_circuit = st.selectbox("Chọn Circuit", circuits)
+    df_line_circuit = df_line[df_line['Circuit'] == selected_circuit]
+    
+    # 3) Boxplot các thông số CIP theo Circuit
+    st.subheader("2) Boxplot các thông số CIP theo Circuit")
+    st.markdown("Bạn có thể chọn thông số muốn so sánh trên trục tung (y). Trục hoành (x) là Circuit.")
+    
+    columns_for_boxplot = [
+        "Nhiệt độ Xút Bắt đầu",
+        "Nhiệt độ Xút Kết thúc",
+        "Tổng thời gian bước Xút (phút)",
+        "Nhiệt độ Nước nóng Bắt đầu",
+        "Nhiệt độ Nước nóng Kết thúc",
+        "Tổng thời gian bước nước nóng (phút)"
+    ]
+    col_selected = st.selectbox("Chọn cột để vẽ Boxplot", columns_for_boxplot)
+    
+    fig1, ax1 = plt.subplots(figsize=(8, 4))
+    sns.boxplot(
+        data=df_line,
+        x="Circuit",
+        y=col_selected,
+        ax=ax1
+    )
+    ax1.set_title(f"Boxplot của '{col_selected}' theo Circuit (Line: {selected_line})")
+    ax1.set_xlabel("Circuit")
+    ax1.set_ylabel(col_selected)
+    st.pyplot(fig1)
+    
+    # 4) Boxplot thể hiện "Tổng thời gian CIP" (Xút + Nước nóng)
+    st.subheader("3) Boxplot Tổng thời gian CIP (phút) theo Circuit")
+    # Tạo cột mới: "Tổng thời gian CIP (phút)"
+    df_line['Tổng thời gian CIP (phút)'] = (
+        df_line['Tổng thời gian bước Xút (phút)'] +
+        df_line['Tổng thời gian bước nước nóng (phút)']
+    )
+    
+    fig2, ax2 = plt.subplots(figsize=(8, 4))
+    sns.boxplot(
+        data=df_line,
+        x="Circuit",
+        y="Tổng thời gian CIP (phút)",
+        ax=ax2
+    )
+    ax2.set_title(f"Tổng thời gian CIP (phút) theo Circuit (Line: {selected_line})")
+    ax2.set_xlabel("Circuit")
+    ax2.set_ylabel("Tổng thời gian CIP (phút)")
+    st.pyplot(fig2)
+    
+    # 5) Biểu đồ thể hiện thời gian giữa hai lần CIP (time_gap_days)
+    st.subheader("4) Thời gian giữa hai lần CIP (time_gap_days)")
+    st.markdown(
+        "- **Cách tính**: Thời gian Bắt đầu CIP của đợt sau trừ đi Thời gian Kết thúc CIP của đợt trước.\n"
+        "- Đơn vị: ngày (1 ngày = 24 giờ).\n"
+        "- Đường kẻ ngang (màu đỏ) biểu thị quy định 5 ngày."
+    )
+    
+    # Lấy data cho line+circuit đã chọn
+    df_line_circuit['time_gap_days'] = df_line_circuit['time_gap_days'].fillna(0)
+    
+    # Vẽ biểu đồ line
+    fig3, ax3 = plt.subplots(figsize=(8, 4))
+    ax3.plot(
+        df_line_circuit['Thời gian Bắt đầu CIP'],
+        df_line_circuit['time_gap_days'],
+        marker='o', linestyle='-',
+        label='Time Gap (days)'
+    )
+    ax3.axhline(5, color='red', linestyle='--', label='Quy định 5 ngày')
+    ax3.set_xlabel("Thời gian Bắt đầu CIP")
+    ax3.set_ylabel("Time Gap (ngày)")
+    ax3.set_title(f"Thời gian giữa các lần CIP - (Line: {selected_line}, Circuit: {selected_circuit})")
+    ax3.legend()
+    st.pyplot(fig3)
 
 if __name__ == "__main__":
     main()
