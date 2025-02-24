@@ -416,7 +416,9 @@ def main():
         existing_cols = [col for col in columns_to_display if col in df_filtered.columns]
         # Thêm các cột còn lại
         remaining_cols = [col for col in df_filtered.columns if col not in existing_cols]
-        ordered_cols = existing
+        ordered_cols = existing_cols + remaining_cols
+        
+        st.dataframe(df_filtered[ordered_cols])
 
 if __name__ == "__main__":
     main()
