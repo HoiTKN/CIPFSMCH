@@ -7,11 +7,20 @@ import seaborn as sns
 def load_data():
     # Đọc dữ liệu CSV
     df = pd.read_csv("data.csv")
-    # Chuyển cột 'date' thành dạng datetime nếu cần
-    df['date'] = pd.to_datetime(df['date'], format="%Y-%m-%d")
+    
+    # In ra danh sách cột để kiểm tra (có thể xóa sau khi kiểm tra)
+    print("Các cột trong CSV:", df.columns)
+    
+    # Đổi tên cột 'Thời gian Bắt đầu CIP' thành 'date'
+    df.rename(columns={"Thời gian Bắt đầu CIP": "date"}, inplace=True)
+    
+    # Chuyển cột 'date' sang dạng datetime với định dạng dd/mm/yy HH:MM
+    df['date'] = pd.to_datetime(df['date'], format="%d/%m/%y %H:%M")
+    
     # Sắp xếp theo thời gian
     df = df.sort_values(by="date")
     return df
+
 
 def main():
     st.title("CIP Data Dashboard")
