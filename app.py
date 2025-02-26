@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+from datetime import datetime, timedelta
 
 def load_data():
     """Đọc dữ liệu gốc từ file CSV mà không đổi tên cột."""
@@ -82,14 +83,56 @@ def main():
     df_raw = load_data()
     df_clean = clean_data(df_raw)
     
-    # 2) Lựa chọn line, circuit, thiết bị
+    # Lấy min và max của thời gian bắt đầu CIP từ dữ liệu
+    min_date = df_clean['Thời gian Bắt đầu CIP'].min().date()
+    max_date = df_clean['Thời gian Bắt đầu CIP'].max().date()
+    
+    # 2) Thêm bộ lọc khoảng thời gian
+    st.subheader("Lọc theo thời gian")
+    
+    col_date1, col_date2 = st.columns(2)
+    
+    with col_date1:
+        start_date = st.date_input(
+            "Từ ngày",
+            min_date,
+            min_value=min_date,
+            max_value=max_date
+        )
+    
+    with col_date2:
+        end_date = st.date_input(
+            "Đến ngày",
+            max_date,
+            min_value=min_date,
+            max_value=max_date
+        )
+    
+    # Chuyển đổi start_date và end_date thành datetime để so sánh
+    start_datetime = pd.Timestamp(start_date)
+    # Đặt end_date là cuối ngày (23:59:59) để bao gồm tất cả các bản ghi trong ngày đó
+    end_datetime = pd.Timestamp(end_date) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+    
+    # Lọc dữ liệu theo khoảng thời gian đã chọn
+    df_filtered_by_date = df_clean[
+        (df_clean['Thời gian Bắt đầu CIP'] >= start_datetime) & 
+        (df_clean['Thời gian Bắt đầu CIP'] <= end_datetime)
+    ]
+    
+    # Kiểm tra xem có dữ liệu nào sau khi lọc không
+    if df_filtered_by_date.empty:
+        st.warning(f"Không có dữ liệu CIP trong khoảng thời gian từ {start_date} đến {end_date}.")
+        return
+    
+    # 3) Lựa chọn line, circuit, thiết bị
+    st.subheader("Lọc theo thiết bị")
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        lines = df_clean['Line'].unique()
+        lines = df_filtered_by_date['Line'].unique()
         selected_line = st.selectbox("Chọn Line", lines)
     
-    df_line = df_clean[df_clean['Line'] == selected_line]
+    df_line = df_filtered_by_date[df_filtered_by_date['Line'] == selected_line]
     
     with col2:
         circuits = df_line['Circuit'].unique()
@@ -109,12 +152,13 @@ def main():
     
     # Kiểm tra xem có dữ liệu nào sau khi lọc không
     if df_filtered.empty:
-        st.warning(f"Không có dữ liệu cho Thiết bị '{selected_thiet_bi}' trong Circuit {selected_circuit} của Line {selected_line}.")
+        st.warning(f"Không có dữ liệu cho Thiết bị '{selected_thiet_bi}' trong Circuit {selected_circuit} của Line {selected_line} trong khoảng thời gian đã chọn.")
         return
     
-    # Không cần tính lại tổng thời gian CIP vì đã tính trong hàm clean_data
+    # Hiển thị số lượng bản ghi sau khi lọc
+    st.info(f"Đang hiển thị {len(df_filtered)} bản ghi CIP từ {start_date} đến {end_date}.")
     
-    # 3) Boxplot các thông số CIP theo Thiết bị
+    # 4) Boxplot các thông số CIP theo Thiết bị
     st.subheader("1) Boxplot các thông số CIP")
     
     columns_for_boxplot = [
@@ -170,7 +214,7 @@ def main():
     else:
         st.warning(f"Không có đủ dữ liệu cho thông số {col_selected} để vẽ biểu đồ.")
     
-    # 4) Biểu đồ thể hiện thời gian giữa hai lần CIP (time_gap_days)
+    # 5) Biểu đồ thể hiện thời gian giữa hai lần CIP (time_gap_days)
     st.subheader("2) Thời gian giữa hai lần CIP")
     st.markdown(
         "- **Cách tính**: Thời gian Bắt đầu CIP của đợt sau trừ đi Thời gian Kết thúc CIP của đợt trước.\n"
@@ -290,7 +334,7 @@ def main():
     else:
         st.warning("Không có đủ dữ liệu về khoảng thời gian giữa các lần CIP để vẽ biểu đồ.")
     
-    # 5) Phân tích hiệu suất CIP
+    # 6) Phân tích hiệu suất CIP
     st.subheader("5) Phân tích hiệu suất CIP")
     
     if not df_filtered.empty and 'Tổng thời gian CIP (phút)' in df_filtered.columns:
@@ -325,7 +369,7 @@ def main():
             plt.tight_layout()
             st.pyplot(fig4)
             
-            # 6) Phân tích xu hướng nhiệt độ
+            # 7) Phân tích xu hướng nhiệt độ
             st.subheader("6) Phân tích xu hướng nhiệt độ")
             
             temp_columns = [
@@ -368,7 +412,7 @@ def main():
                     plt.tight_layout()
                     st.pyplot(fig5)
             
-            # 7) Phân tích hiệu quả lưu lượng
+            # 8) Phân tích hiệu quả lưu lượng
             st.subheader("7) Phân tích hiệu quả lưu lượng")
             
             if 'Lưu lượng hồi (l/h)' in df_filtered.columns:
@@ -404,7 +448,7 @@ def main():
         except Exception as e:
             st.error(f"Lỗi khi phân tích hiệu suất CIP: {str(e)}")
     
-    # 8) Hiển thị bảng dữ liệu chi tiết
+    # 9) Hiển thị bảng dữ liệu chi tiết
     with st.expander("Xem dữ liệu chi tiết"):
         # Hiển thị các cột quan trọng trước
         columns_to_display = [
